@@ -1,0 +1,84 @@
+{
+  "id": "elasticsearch",
+  "name": "Elasticsearch",
+  "name_en": "Elasticsearch",
+  "version": "1.0.0",
+  "description": "Búsqueda y consulta de solo lectura en Elasticsearch: listar índices, buscar documentos y contar resultados por consulta",
+  "description_en": "Read-only search and querying in Elasticsearch: list indices, search documents and count results by query",
+  "icon": "icon.svg",
+  "category": "database",
+  "category_en": "database",
+  "keywords": ["elasticsearch", "elastic", "búsqueda", "search", "índice", "index", "database", "base de datos", "solo lectura", "read-only"],
+  "library": {
+    "package": "ruvic-elasticsearch-connector",
+    "install": "pip install git+https://github.com/Dgirto/Elasticsearch.git#subdirectory=lib",
+    "import_name": "ruvic_elasticsearch_connector"
+  },
+  "auth_modes": [
+    {
+      "id": "user_password",
+      "label": "Usuario y contraseña",
+      "fields": [
+        {
+          "key": "host",
+          "label": "Host",
+          "type": "text",
+          "required": true,
+          "placeholder": "search.empresa.com",
+          "help_text": "Hostname o IP del clúster Elasticsearch"
+        },
+        {
+          "key": "port",
+          "label": "Puerto",
+          "type": "number",
+          "required": true,
+          "default": "9200"
+        },
+        {
+          "key": "username",
+          "label": "Usuario",
+          "type": "text",
+          "required": true,
+          "help_text": "Se recomienda un usuario con rol de solo lectura (viewer/read-only)"
+        },
+        {
+          "key": "password",
+          "label": "Contraseña",
+          "type": "password",
+          "secret": true,
+          "required": true
+        },
+        {
+          "key": "use_ssl",
+          "label": "Usar HTTPS",
+          "type": "boolean",
+          "required": false,
+          "default": "true",
+          "help_text": "La mayoría de clústeres modernos (8.x) requieren HTTPS por defecto"
+        },
+        {
+          "key": "verify_certs",
+          "label": "Verificar certificado TLS",
+          "type": "boolean",
+          "required": false,
+          "default": "true",
+          "help_text": "Desactívalo solo para clústeres con certificados autofirmados en entornos de prueba"
+        },
+        {
+          "key": "connect_timeout",
+          "label": "Timeout de conexión (segundos)",
+          "type": "number",
+          "required": false,
+          "default": "10"
+        }
+      ]
+    }
+  ],
+  "env_prefix": "RUVIC_ELASTICSEARCH_",
+  "operations": ["db.list_indices", "db.search", "db.count"],
+  "test_connection": true,
+  "docs": {
+    "skill": "SKILL.md",
+    "permissions_note": "El usuario necesita el privilegio read (o el rol predefinido viewer/read_only) sobre los índices a consultar, más monitor a nivel de clúster para listar índices. No se requieren permisos de escritura ni de administración."
+  }
+}

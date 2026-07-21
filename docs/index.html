@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="doc_title">Conector Elasticsearch — Ruvic</title>
+  <link rel="stylesheet" href="assets/ruvic.css">
+</head>
+<body class="guide">
+  <main class="ruvic-container">
+
+    <nav class="ruvic-toc" aria-label="Índice">
+      <h2 data-i18n="toc_title">Contenido</h2>
+      <ol>
+        <li><a href="#que-es" data-i18n="toc.que_es">¿Qué es y para qué sirve?</a></li>
+        <li><a href="#prerrequisitos" data-i18n="toc.prerrequisitos">Prerrequisitos</a></li>
+        <li><a href="#configuracion-fabricante" data-i18n="toc.configuracion_fabricante">Configuración en el fabricante</a></li>
+        <li><a href="#permisos" data-i18n="toc.permisos">Permisos requeridos</a></li>
+        <li><a href="#configuracion-ruvic" data-i18n="toc.configuracion_ruvic">Configuración en Ruvic</a></li>
+        <li><a href="#verificacion" data-i18n="toc.verificacion">Verificación</a></li>
+        <li><a href="#solucion-problemas" data-i18n="toc.solucion_problemas">Solución de problemas</a></li>
+        <li><a href="#faq-seguridad" data-i18n="toc.faq_seguridad">Preguntas frecuentes y notas de seguridad</a></li>
+      </ol>
+    </nav>
+
+    <h1 data-i18n="guide_title">Elasticsearch</h1>
+    <p class="guide-updated">{{ULTIMA_ACTUALIZACION}}</p>
+
+    <!-- ============ 1. QUÉ ES ============ -->
+    <section>
+      <h2 id="que-es" data-i18n="section.que_es">¿Qué es y para qué sirve?</h2>
+      <p data-i18n="que_es.body">El conector Elasticsearch permite que el agente de Ruvic consulte tu clúster <strong>en modo solo lectura</strong>: puede buscar y contar documentos, pero nunca indexarlos ni modificarlos. Una vez configurado, puedes pedirle al agente cosas como:</p>
+      <ul>
+        <li data-i18n="que_es.ej1">“Busca los productos de la categoría electrónica y muéstrame los primeros 10.”</li>
+        <li data-i18n="que_es.ej2">“¿Cuántos pedidos hay registrados en la ciudad de Bogotá?”</li>
+        <li data-i18n="que_es.ej3">“¿Qué índices tiene el clúster y cuántos documentos hay en cada uno?”</li>
+      </ul>
+      <p data-i18n="que_es.ops">Operaciones soportadas:</p>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.operacion">Operación</th>
+            <th data-i18n="table.que_hace">Qué hace</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>db.list_indices</code></td>
+            <td data-i18n="ops.list_indices">Lista los índices del clúster con su tamaño y conteo de documentos</td>
+          </tr>
+          <tr>
+            <td><code>db.search</code></td>
+            <td data-i18n="ops.search">Busca documentos en un índice usando Query DSL</td>
+          </tr>
+          <tr>
+            <td><code>db.count</code></td>
+            <td data-i18n="ops.count">Cuenta los documentos que cumplen una consulta</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout callout-info">
+        <span class="callout-title" data-i18n="que_es.callout.title">Solo lectura, por diseño</span>
+        <span data-i18n="que_es.callout.body">El conector nunca llama a index, update, delete ni bulk: solo emite operaciones de búsqueda y conteo. Además, el usuario dedicado solo tiene privilegios de lectura. Hay dos barreras independientes.</span>
+      </div>
+    </section>
+
+    <!-- ============ 2. PRERREQUISITOS ============ -->
+    <section>
+      <h2 id="prerrequisitos" data-i18n="section.prerrequisitos">Prerrequisitos</h2>
+      <ul>
+        <li data-i18n="prer.db">Un clúster <strong>Elasticsearch 8.x</strong> (self-hosted, Elastic Cloud, o Docker) con seguridad habilitada (activada por defecto en 8.x).</li>
+        <li data-i18n="prer.admin">Acceso administrativo al clúster (usuario <code>elastic</code> o un rol con permiso para crear usuarios y roles), solo durante la configuración inicial.</li>
+        <li data-i18n="prer.red"><strong>Acceso de red</strong> desde la plataforma Ruvic al clúster (host y puerto alcanzables; regla de firewall o lista de IPs permitidas si aplica).</li>
+        <li data-i18n="prer.datos">Los datos de conexión: host y puerto (por defecto <code>9200</code>).</li>
+      </ul>
+    </section>
+
+    <!-- ============ 3. CONFIGURACIÓN EN EL FABRICANTE ============ -->
+    <section>
+      <h2 id="configuracion-fabricante" data-i18n="section.configuracion_fabricante">Configuración en el fabricante</h2>
+      <p data-i18n="fab.intro">Vas a crear un <strong>rol y usuario dedicados de solo lectura</strong> para Ruvic. No uses el usuario <code>elastic</code> ni el de tu aplicación: un usuario dedicado permite auditar la actividad del agente y limitar el acceso al mínimo.</p>
+      <ol class="ruvic-steps">
+        <li>
+          <strong data-i18n="fab.p1.t">Crea el rol de solo lectura.</strong>
+          <p data-i18n="fab.p1.b">Desde Kibana (Stack Management → Roles) o vía API con un usuario administrador:</p>
+<pre><code>POST /_security/role/ruvic_reader
+{
+  "cluster": ["monitor"],
+  "indices": [
+    { "names": ["*"], "privileges": ["read", "view_index_metadata"] }
+  ]
+}</code></pre>
+          <div class="callout callout-info">
+            <span class="callout-title" data-i18n="fab.p1.note.title">Nota</span>
+            <span data-i18n="fab.p1.note.body">Ajusta "names" a un patrón específico (ej. ["productos-*"]) si quieres limitar el acceso a ciertos índices en vez de todos.</span>
+          </div>
+        </li>
+        <li>
+          <strong data-i18n="fab.p2.t">Crea el usuario y asígnale el rol.</strong>
+          <p data-i18n="fab.p2.b">Elige una contraseña fuerte (mínimo 16 caracteres, generada aleatoriamente) y guárdala: la usarás en el formulario de Ruvic (campo Contraseña):</p>
+<pre><code>POST /_security/user/ruvic_reader
+{
+  "password": "CAMBIA_ESTA_CONTRASEÑA",
+  "roles": ["ruvic_reader"]
+}</code></pre>
+        </li>
+        <li>
+          <strong data-i18n="fab.p3.t">Habilita el acceso de red desde Ruvic.</strong>
+          <p data-i18n="fab.p3.b">Si tu clúster restringe conexiones por IP (habitual en producción), permite la IP de la plataforma Ruvic:</p>
+          <ul>
+            <li data-i18n="fab.p3.li1"><strong>Servidor propio</strong>: regla de firewall del sistema operativo para el puerto <code>9200</code>.</li>
+            <li data-i18n="fab.p3.li2"><strong>Elastic Cloud / servicio administrado</strong>: agrega la IP en la lista de tráfico permitido (traffic filter) de la consola del proveedor.</li>
+          </ul>
+          <div class="screenshot-placeholder" data-i18n="fab.p3.img">[ Captura: regla de firewall / traffic filter con la IP de Ruvic — reemplazar por assets/img/elasticsearch-firewall.png ]</div>
+        </li>
+        <li>
+          <strong data-i18n="fab.p4.t">Verifica el usuario desde fuera del servidor.</strong>
+          <p data-i18n="fab.p4.b">Desde una máquina distinta al clúster (idealmente con salida de red similar a la de Ruvic):</p>
+<pre><code>curl -u ruvic_reader:TU_CONTRASEÑA https://TU_HOST:9200/_cluster/health</code></pre>
+          <p data-i18n="fab.p4.result">Si responde con un JSON de estado del clúster, el fabricante quedó listo. Anota estos valores para la siguiente sección: host, puerto, usuario y contraseña.</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============ 4. PERMISOS ============ -->
+    <section>
+      <h2 id="permisos" data-i18n="section.permisos">Permisos requeridos</h2>
+      <p data-i18n="perm.intro">Principio de mínimo privilegio: el usuario de Ruvic solo necesita estos privilegios. No otorgues <code>all</code>, <code>manage</code>, <code>index</code>, <code>write</code> ni <code>delete</code>.</p>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.permiso">Privilegio</th>
+            <th data-i18n="table.para_que">Para qué sirve</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>monitor</code> <span data-i18n="perm.monitor.scope">(a nivel de clúster)</span></td>
+            <td data-i18n="perm.monitor.body">Listar índices y ver su estado (<code>db.list_indices</code>)</td>
+          </tr>
+          <tr>
+            <td><code>read</code> <span data-i18n="perm.read.scope">(por índice)</span></td>
+            <td data-i18n="perm.read.body">Buscar y contar documentos (<code>db.search</code>, <code>db.count</code>)</td>
+          </tr>
+          <tr>
+            <td><code>view_index_metadata</code> <span data-i18n="perm.viewmeta.scope">(por índice)</span></td>
+            <td data-i18n="perm.viewmeta.body">Consultar el mapeo y la metadata del índice necesaria para ejecutar búsquedas</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============ 5. CONFIGURACIÓN EN RUVIC ============ -->
+    <section>
+      <h2 id="configuracion-ruvic" data-i18n="section.configuracion_ruvic">Configuración en Ruvic</h2>
+      <p data-i18n="ruvic.intro">Entra a <strong>Settings → Conectores</strong>, busca la tarjeta <strong>Elasticsearch</strong> y pulsa <strong>Configurar</strong>. Diligencia el formulario con los valores que obtuviste en la sección anterior:</p>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.campo">Campo del formulario</th>
+            <th data-i18n="table.valor">Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-i18n="ruvic.f.host">Host</td>
+            <td data-i18n="ruvic.v.host">Hostname o IP del clúster (ej. <code>search.empresa.com</code>)</td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.f.puerto">Puerto</td>
+            <td><code>9200</code> <span data-i18n="ruvic.v.puerto">(salvo configuración distinta)</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.f.usuario">Usuario</td>
+            <td><code>ruvic_reader</code></td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.f.pass">Contraseña</td>
+            <td data-i18n="ruvic.v.pass">La contraseña del paso 2. Se guarda cifrada como secreto: la interfaz no volverá a mostrarla</td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.f.ssl">Usar HTTPS</td>
+            <td data-i18n="ruvic.v.ssl">Activado por defecto; la mayoría de clústeres 8.x lo requieren</td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.f.verify">Verificar certificado TLS</td>
+            <td data-i18n="ruvic.v.verify">Activado por defecto; desactívalo solo en entornos de prueba con certificados autofirmados</td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.f.timeout">Timeout de conexión</td>
+            <td data-i18n="ruvic.v.timeout">Opcional; <code>10</code> segundos por defecto</td>
+          </tr>
+        </tbody>
+      </table>
+      <p data-i18n="ruvic.save">Guarda y pulsa <span class="ruvic-button">Probar conexión</span> — la plataforma se conectará a tu clúster y confirmará que las credenciales y la red funcionan.</p>
+      <div class="screenshot-placeholder" data-i18n="ruvic.img">[ Captura: formulario del conector Elasticsearch en Settings → Conectores — reemplazar por assets/img/elasticsearch-form.png ]</div>
+    </section>
+
+    <!-- ============ 6. VERIFICACIÓN ============ -->
+    <section>
+      <h2 id="verificacion" data-i18n="section.verificacion">Verificación</h2>
+      <ol class="ruvic-steps">
+        <li>
+          <strong data-i18n="ver.p1.t">Test de conexión exitoso.</strong>
+          <p data-i18n="ver.p1.b">El botón <em>Probar conexión</em> debe responder: <em>“Conexión exitosa a tu-host:9200”</em>. La tarjeta del conector cambia a estado <strong>Configurado</strong>.</p>
+        </li>
+        <li>
+          <strong data-i18n="ver.p2.t">Automatización mínima de prueba.</strong>
+          <p data-i18n="ver.p2.b">Abre una conversación nueva con el agente y pídele: <em>“Lista los índices del clúster de Elasticsearch y dime cuántos documentos tiene cada uno.”</em> El agente debe responder con el listado real de tus índices. Si lo hace, el conector quedó operativo de punta a punta.</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============ 7. SOLUCIÓN DE PROBLEMAS ============ -->
+    <section>
+      <h2 id="solucion-problemas" data-i18n="section.solucion_problemas">Solución de problemas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.sintoma">Mensaje / síntoma</th>
+            <th data-i18n="table.causa">Causa probable y solución</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-i18n="prob.s1">“Autenticación fallida: usuario o contraseña inválidos”</td>
+            <td data-i18n="prob.c1">Contraseña mal copiada o usuario inexistente. Reintenta el paso 2 de la sección 3 y vuelve a guardar el formulario (deja la contraseña vacía para conservar la anterior o escribe la nueva para reemplazarla).</td>
+          </tr>
+          <tr>
+            <td data-i18n="prob.s2">“No se pudo conectar … (timeout)”</td>
+            <td data-i18n="prob.c2">La plataforma no alcanza el host/puerto. Revisa el paso 3 (firewall / traffic filter) y que el host no sea <code>localhost</code> (debe ser accesible desde Ruvic, no desde tu equipo).</td>
+          </tr>
+          <tr>
+            <td data-i18n="prob.s3">Error de certificado TLS al conectar</td>
+            <td data-i18n="prob.c3">El clúster usa un certificado autofirmado. Desactiva "Verificar certificado TLS" en el formulario SOLO si estás en un entorno de prueba controlado; en producción, instala un certificado válido.</td>
+          </tr>
+          <tr>
+            <td data-i18n="prob.s4">El agente lista índices pero “no tiene permiso” al buscar en uno</td>
+            <td data-i18n="prob.c4">Falta el privilegio read o view_index_metadata sobre ese índice específico en el rol. Repite el paso 1 de la sección 3 ajustando el patrón "names".</td>
+          </tr>
+          <tr>
+            <td data-i18n="prob.s5">El conector aparece “Sin configurar” tras guardar</td>
+            <td data-i18n="prob.c5">Algún campo obligatorio quedó vacío. Ábrelo de nuevo y completa host, puerto, usuario y contraseña.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============ 8. FAQ Y SEGURIDAD ============ -->
+    <section>
+      <h2 id="faq-seguridad" data-i18n="section.faq_seguridad">Preguntas frecuentes y notas de seguridad</h2>
+
+      <h3 data-i18n="faq.q1">¿El agente puede indexar, modificar o borrar documentos?</h3>
+      <p data-i18n="faq.a1">No. El conector nunca llama a index, update, delete ni bulk, y el usuario ruvic_reader solo tiene privilegios de lectura (read, view_index_metadata, monitor). Hay dos barreras independientes.</p>
+
+      <h3 data-i18n="faq.q2">¿Dónde queda guardada la contraseña?</h3>
+      <p data-i18n="faq.a2">Como secreto en el almacén de credenciales de la plataforma, asociado a tu usuario. La interfaz nunca vuelve a mostrarla; solo indica “definida”. Para cambiarla, escribe una nueva en el formulario; para conservarla al editar otros campos, deja el campo vacío.</p>
+
+      <h3 data-i18n="faq.q3">Rotación de credenciales</h3>
+      <p data-i18n="faq.a3">Recomendado cada 90 días o según tu política: cambia la contraseña con <code>POST /_security/user/ruvic_reader/_password</code>, actualízala en el formulario del conector y pulsa <em>Probar conexión</em>.</p>
+
+      <h3 data-i18n="faq.q4">¿Qué hago si la contraseña se compromete?</h3>
+      <ol>
+        <li data-i18n="faq.a4.li1">Cambia la contraseña de inmediato o deshabilita el usuario (<code>PUT /_security/user/ruvic_reader/_disable</code>).</li>
+        <li data-i18n="faq.a4.li2">Revisa los logs de auditoría de seguridad del clúster.</li>
+        <li data-i18n="faq.a4.li3">Actualiza la nueva contraseña en el formulario del conector.</li>
+      </ol>
+
+      <h3 data-i18n="faq.q5">¿Expiran las credenciales?</h3>
+      <p data-i18n="faq.a5">Por defecto no (usuario/contraseña de Elasticsearch no caducan solos). Si tu política exige expiración, gestiónala manualmente rotando la contraseña según tu calendario de seguridad.</p>
+
+      <div class="callout callout-warning">
+        <span class="callout-title" data-i18n="faq.bp.title">Buenas prácticas</span>
+        <span data-i18n="faq.bp.body">Usa siempre un usuario dedicado y de solo lectura; restringe el rol a los índices que el agente realmente necesita en vez de "*"; mantén habilitada la verificación de certificados TLS en producción; y evita compartir la contraseña por canales no seguros.</span>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const I18N = {
+      es: {
+        doc_title: "Conector Elasticsearch — Ruvic",
+        toc_title: "Contenido",
+        "toc.que_es": "¿Qué es y para qué sirve?",
+        "toc.prerrequisitos": "Prerrequisitos",
+        "toc.configuracion_fabricante": "Configuración en el fabricante",
+        "toc.permisos": "Permisos requeridos",
+        "toc.configuracion_ruvic": "Configuración en Ruvic",
+        "toc.verificacion": "Verificación",
+        "toc.solucion_problemas": "Solución de problemas",
+        "toc.faq_seguridad": "Preguntas frecuentes y notas de seguridad",
+        guide_title: "Elasticsearch",
+        "section.que_es": "¿Qué es y para qué sirve?",
+        "que_es.body": "El conector Elasticsearch permite que el agente de Ruvic consulte tu clúster en modo solo lectura: puede buscar y contar documentos, pero nunca indexarlos ni modificarlos. Una vez configurado, puedes pedirle al agente cosas como:",
+        "que_es.ej1": "“Busca los productos de la categoría electrónica y muéstrame los primeros 10.”",
+        "que_es.ej2": "“¿Cuántos pedidos hay registrados en la ciudad de Bogotá?”",
+        "que_es.ej3": "“¿Qué índices tiene el clúster y cuántos documentos hay en cada uno?”",
+        "que_es.ops": "Operaciones soportadas:",
+        "table.operacion": "Operación",
+        "table.que_hace": "Qué hace",
+        "ops.list_indices": "Lista los índices del clúster con su tamaño y conteo de documentos",
+        "ops.search": "Busca documentos en un índice usando Query DSL",
+        "ops.count": "Cuenta los documentos que cumplen una consulta",
+        "que_es.callout.title": "Solo lectura, por diseño",
+        "que_es.callout.body": "El conector nunca llama a index, update, delete ni bulk: solo emite operaciones de búsqueda y conteo. Además, el usuario dedicado solo tiene privilegios de lectura. Hay dos barreras independientes.",
+        "section.prerrequisitos": "Prerrequisitos",
+        "prer.db": "Un clúster Elasticsearch 8.x (self-hosted, Elastic Cloud, o Docker) con seguridad habilitada (activada por defecto en 8.x).",
+        "prer.admin": "Acceso administrativo al clúster (usuario elastic o un rol con permiso para crear usuarios y roles), solo durante la configuración inicial.",
+        "prer.red": "Acceso de red desde la plataforma Ruvic al clúster (host y puerto alcanzables; regla de firewall o lista de IPs permitidas si aplica).",
+        "prer.datos": "Los datos de conexión: host y puerto (por defecto 9200).",
+        "section.configuracion_fabricante": "Configuración en el fabricante",
+        "fab.intro": "Vas a crear un rol y usuario dedicados de solo lectura para Ruvic. No uses el usuario elastic ni el de tu aplicación: un usuario dedicado permite auditar la actividad del agente y limitar el acceso al mínimo.",
+        "fab.p1.t": "Crea el rol de solo lectura.",
+        "fab.p1.b": "Desde Kibana (Stack Management → Roles) o vía API con un usuario administrador:",
+        "fab.p1.note.title": "Nota",
+        "fab.p1.note.body": "Ajusta \"names\" a un patrón específico (ej. [\"productos-*\"]) si quieres limitar el acceso a ciertos índices en vez de todos.",
+        "fab.p2.t": "Crea el usuario y asígnale el rol.",
+        "fab.p2.b": "Elige una contraseña fuerte (mínimo 16 caracteres, generada aleatoriamente) y guárdala: la usarás en el formulario de Ruvic (campo Contraseña):",
+        "fab.p3.t": "Habilita el acceso de red desde Ruvic.",
+        "fab.p3.b": "Si tu clúster restringe conexiones por IP (habitual en producción), permite la IP de la plataforma Ruvic:",
+        "fab.p3.li1": "Servidor propio: regla de firewall del sistema operativo para el puerto 9200.",
+        "fab.p3.li2": "Elastic Cloud / servicio administrado: agrega la IP en la lista de tráfico permitido (traffic filter) de la consola del proveedor.",
+        "fab.p3.img": "[ Captura: regla de firewall / traffic filter con la IP de Ruvic — reemplazar por assets/img/elasticsearch-firewall.png ]",
+        "fab.p4.t": "Verifica el usuario desde fuera del servidor.",
+        "fab.p4.b": "Desde una máquina distinta al clúster (idealmente con salida de red similar a la de Ruvic):",
+        "fab.p4.result": "Si responde con un JSON de estado del clúster, el fabricante quedó listo. Anota estos valores para la siguiente sección: host, puerto, usuario y contraseña.",
+        "section.permisos": "Permisos requeridos",
+        "perm.intro": "Principio de mínimo privilegio: el usuario de Ruvic solo necesita estos privilegios. No otorgues all, manage, index, write ni delete.",
+        "table.permiso": "Privilegio",
+        "table.para_que": "Para qué sirve",
+        "perm.monitor.scope": "(a nivel de clúster)",
+        "perm.monitor.body": "Listar índices y ver su estado (db.list_indices)",
+        "perm.read.scope": "(por índice)",
+        "perm.read.body": "Buscar y contar documentos (db.search, db.count)",
+        "perm.viewmeta.scope": "(por índice)",
+        "perm.viewmeta.body": "Consultar el mapeo y la metadata del índice necesaria para ejecutar búsquedas",
+        "section.configuracion_ruvic": "Configuración en Ruvic",
+        "ruvic.intro": "Entra a Settings → Conectores, busca la tarjeta Elasticsearch y pulsa Configurar. Diligencia el formulario con los valores que obtuviste en la sección anterior:",
+        "table.campo": "Campo del formulario",
+        "table.valor": "Valor",
+        "ruvic.f.host": "Host",
+        "ruvic.v.host": "Hostname o IP del clúster (ej. search.empresa.com)",
+        "ruvic.f.puerto": "Puerto",
+        "ruvic.v.puerto": "(salvo configuración distinta)",
+        "ruvic.f.usuario": "Usuario",
+        "ruvic.f.pass": "Contraseña",
+        "ruvic.v.pass": "La contraseña del paso 2. Se guarda cifrada como secreto: la interfaz no volverá a mostrarla",
+        "ruvic.f.ssl": "Usar HTTPS",
+        "ruvic.v.ssl": "Activado por defecto; la mayoría de clústeres 8.x lo requieren",
+        "ruvic.f.verify": "Verificar certificado TLS",
+        "ruvic.v.verify": "Activado por defecto; desactívalo solo en entornos de prueba con certificados autofirmados",
+        "ruvic.f.timeout": "Timeout de conexión",
+        "ruvic.v.timeout": "Opcional; 10 segundos por defecto",
+        "ruvic.save": "Guarda y pulsa Probar conexión — la plataforma se conectará a tu clúster y confirmará que las credenciales y la red funcionan.",
+        "ruvic.img": "[ Captura: formulario del conector Elasticsearch en Settings → Conectores — reemplazar por assets/img/elasticsearch-form.png ]",
+        "section.verificacion": "Verificación",
+        "ver.p1.t": "Test de conexión exitoso.",
+        "ver.p1.b": "El botón Probar conexión debe responder: “Conexión exitosa a tu-host:9200”. La tarjeta del conector cambia a estado Configurado.",
+        "ver.p2.t": "Automatización mínima de prueba.",
+        "ver.p2.b": "Abre una conversación nueva con el agente y pídele: “Lista los índices del clúster de Elasticsearch y dime cuántos documentos tiene cada uno.” El agente debe responder con el listado real de tus índices. Si lo hace, el conector quedó operativo de punta a punta.",
+        "section.solucion_problemas": "Solución de problemas",
+        "table.sintoma": "Mensaje / síntoma",
+        "table.causa": "Causa probable y solución",
+        "prob.s1": "“Autenticación fallida: usuario o contraseña inválidos”",
+        "prob.c1": "Contraseña mal copiada o usuario inexistente. Reintenta el paso 2 de la sección 3 y vuelve a guardar el formulario (deja la contraseña vacía para conservar la anterior o escribe la nueva para reemplazarla).",
+        "prob.s2": "“No se pudo conectar … (timeout)”",
+        "prob.c2": "La plataforma no alcanza el host/puerto. Revisa el paso 3 (firewall / traffic filter) y que el host no sea localhost (debe ser accesible desde Ruvic, no desde tu equipo).",
+        "prob.s3": "Error de certificado TLS al conectar",
+        "prob.c3": "El clúster usa un certificado autofirmado. Desactiva \"Verificar certificado TLS\" en el formulario SOLO si estás en un entorno de prueba controlado; en producción, instala un certificado válido.",
+        "prob.s4": "El agente lista índices pero “no tiene permiso” al buscar en uno",
+        "prob.c4": "Falta el privilegio read o view_index_metadata sobre ese índice específico en el rol. Repite el paso 1 de la sección 3 ajustando el patrón \"names\".",
+        "prob.s5": "El conector aparece “Sin configurar” tras guardar",
+        "prob.c5": "Algún campo obligatorio quedó vacío. Ábrelo de nuevo y completa host, puerto, usuario y contraseña.",
+        "section.faq_seguridad": "Preguntas frecuentes y notas de seguridad",
+        "faq.q1": "¿El agente puede indexar, modificar o borrar documentos?",
+        "faq.a1": "No. El conector nunca llama a index, update, delete ni bulk, y el usuario ruvic_reader solo tiene privilegios de lectura (read, view_index_metadata, monitor). Hay dos barreras independientes.",
+        "faq.q2": "¿Dónde queda guardada la contraseña?",
+        "faq.a2": "Como secreto en el almacén de credenciales de la plataforma, asociado a tu usuario. La interfaz nunca vuelve a mostrarla; solo indica “definida”. Para cambiarla, escribe una nueva en el formulario; para conservarla al editar otros campos, deja el campo vacío.",
+        "faq.q3": "Rotación de credenciales",
+        "faq.a3": "Recomendado cada 90 días o según tu política: cambia la contraseña con POST /_security/user/ruvic_reader/_password, actualízala en el formulario del conector y pulsa Probar conexión.",
+        "faq.q4": "¿Qué hago si la contraseña se compromete?",
+        "faq.a4.li1": "Cambia la contraseña de inmediato o deshabilita el usuario (PUT /_security/user/ruvic_reader/_disable).",
+        "faq.a4.li2": "Revisa los logs de auditoría de seguridad del clúster.",
+        "faq.a4.li3": "Actualiza la nueva contraseña en el formulario del conector.",
+        "faq.q5": "¿Expiran las credenciales?",
+        "faq.a5": "Por defecto no (usuario/contraseña de Elasticsearch no caducan solos). Si tu política exige expiración, gestiónala manualmente rotando la contraseña según tu calendario de seguridad.",
+        "faq.bp.title": "Buenas prácticas",
+        "faq.bp.body": "Usa siempre un usuario dedicado y de solo lectura; restringe el rol a los índices que el agente realmente necesita en vez de \"*\"; mantén habilitada la verificación de certificados TLS en producción; y evita compartir la contraseña por canales no seguros.",
+      },
+      en: {
+        doc_title: "Elasticsearch Connector — Ruvic",
+        toc_title: "Contents",
+        "toc.que_es": "What it is and what it’s for",
+        "toc.prerrequisitos": "Prerequisites",
+        "toc.configuracion_fabricante": "Vendor / provider setup",
+        "toc.permisos": "Required permissions",
+        "toc.configuracion_ruvic": "Configuration in Ruvic",
+        "toc.verificacion": "Verification",
+        "toc.solucion_problemas": "Troubleshooting",
+        "toc.faq_seguridad": "FAQ and security notes",
+        guide_title: "Elasticsearch",
+        "section.que_es": "What it is and what it’s for",
+        "que_es.body": "The Elasticsearch connector lets the Ruvic agent query your cluster in read-only mode: it can search and count documents but never index or modify them. Once configured, you can ask the agent things like:",
+        "que_es.ej1": "“Search for electronics-category products and show me the first 10.”",
+        "que_es.ej2": "“How many orders are registered in Bogota?”",
+        "que_es.ej3": "“What indices does the cluster have and how many documents are in each one?”",
+        "que_es.ops": "Supported operations:",
+        "table.operacion": "Operation",
+        "table.que_hace": "What it does",
+        "ops.list_indices": "Lists the cluster's indices with their size and document count",
+        "ops.search": "Searches documents in an index using Query DSL",
+        "ops.count": "Counts documents matching a query",
+        "que_es.callout.title": "Read-only by design",
+        "que_es.callout.body": "The connector never calls index, update, delete or bulk: it only issues search and count operations. On top of that, the dedicated user only has read privileges. Two independent safeguards.",
+        "section.prerrequisitos": "Prerequisites",
+        "prer.db": "An Elasticsearch 8.x cluster (self-hosted, Elastic Cloud, or Docker) with security enabled (on by default in 8.x).",
+        "prer.admin": "Administrative access to the cluster (the elastic user, or a role that can create users and roles), only during initial setup.",
+        "prer.red": "Network access from the Ruvic platform to the cluster (reachable host and port; firewall rule or IP allow-list if applicable).",
+        "prer.datos": "The connection details: host and port (default 9200).",
+        "section.configuracion_fabricante": "Vendor / provider setup",
+        "fab.intro": "You will create a dedicated read-only role and user for Ruvic. Do not reuse the elastic user or an application user: a dedicated user lets you audit the agent's activity and keep access to a minimum.",
+        "fab.p1.t": "Create the read-only role.",
+        "fab.p1.b": "From Kibana (Stack Management → Roles) or via API with an admin user:",
+        "fab.p1.note.title": "Note",
+        "fab.p1.note.body": "Adjust \"names\" to a specific pattern (e.g. [\"productos-*\"]) if you want to limit access to certain indices instead of all of them.",
+        "fab.p2.t": "Create the user and assign the role.",
+        "fab.p2.b": "Choose a strong password (16+ random characters) and save it: you will paste it into the Ruvic form (Password field):",
+        "fab.p3.t": "Enable network access from Ruvic.",
+        "fab.p3.b": "If your cluster restricts connections by IP (common in production), allow the Ruvic platform IP:",
+        "fab.p3.li1": "Self-hosted: OS firewall rule for port 9200.",
+        "fab.p3.li2": "Elastic Cloud / managed service: add the IP to the traffic filter allow-list in the provider console.",
+        "fab.p3.img": "[ Screenshot: firewall rule / traffic filter with the Ruvic IP — replace with assets/img/elasticsearch-firewall.png ]",
+        "fab.p4.t": "Verify the user from outside the server.",
+        "fab.p4.b": "From a machine other than the cluster (ideally with network egress similar to Ruvic's):",
+        "fab.p4.result": "If it returns a cluster health JSON, the vendor side is ready. Write down these values for the next section: host, port, user and password.",
+        "section.permisos": "Required permissions",
+        "perm.intro": "Least-privilege principle: the Ruvic user only needs these privileges. Do not grant all, manage, index, write or delete.",
+        "table.permiso": "Privilege",
+        "table.para_que": "Why it's needed",
+        "perm.monitor.scope": "(cluster-level)",
+        "perm.monitor.body": "List indices and see their status (db.list_indices)",
+        "perm.read.scope": "(per index)",
+        "perm.read.body": "Search and count documents (db.search, db.count)",
+        "perm.viewmeta.scope": "(per index)",
+        "perm.viewmeta.body": "Query the index mapping and metadata needed to run searches",
+        "section.configuracion_ruvic": "Configuration in Ruvic",
+        "ruvic.intro": "Go to Settings → Connectors, find the Elasticsearch card and click Configure. Fill in the form with the values from the previous section:",
+        "table.campo": "Form field",
+        "table.valor": "Value",
+        "ruvic.f.host": "Host",
+        "ruvic.v.host": "Cluster hostname or IP (e.g. search.company.com)",
+        "ruvic.f.puerto": "Port",
+        "ruvic.v.puerto": "(unless configured otherwise)",
+        "ruvic.f.usuario": "Username",
+        "ruvic.f.pass": "Password",
+        "ruvic.v.pass": "The password from step 2. Stored as a secret: the UI will never display it again",
+        "ruvic.f.ssl": "Use HTTPS",
+        "ruvic.v.ssl": "On by default; most 8.x clusters require it",
+        "ruvic.f.verify": "Verify TLS certificate",
+        "ruvic.v.verify": "On by default; disable only in test environments with self-signed certificates",
+        "ruvic.f.timeout": "Connection timeout",
+        "ruvic.v.timeout": "Optional; defaults to 10 seconds",
+        "ruvic.save": "Save and click Test connection — the platform will connect to your cluster and confirm credentials and networking work.",
+        "ruvic.img": "[ Screenshot: Elasticsearch connector form in Settings → Connectors — replace with assets/img/elasticsearch-form.png ]",
+        "section.verificacion": "Verification",
+        "ver.p1.t": "Successful connection test.",
+        "ver.p1.b": "The Test connection button should return: “Successful connection to your-host:9200”. The connector card switches to Configured.",
+        "ver.p2.t": "Minimal test automation.",
+        "ver.p2.b": "Open a new conversation with the agent and ask: “List the indices in the Elasticsearch cluster and tell me how many documents each one has.” The agent should reply with your actual index list. If it does, the connector is fully operational.",
+        "section.solucion_problemas": "Troubleshooting",
+        "table.sintoma": "Message / symptom",
+        "table.causa": "Likely cause and fix",
+        "prob.s1": "“Authentication failed: invalid user or password”",
+        "prob.c1": "Mistyped password or missing user. Redo step 2 of section 3 and re-save the form (leave the password empty to keep the previous one or type the new one to replace it).",
+        "prob.s2": "“Could not connect … (timeout)”",
+        "prob.c2": "The platform cannot reach the host/port. Review step 3 (firewall / traffic filter) and make sure the host is not localhost (it must be reachable from Ruvic, not from your laptop).",
+        "prob.s3": "TLS certificate error when connecting",
+        "prob.c3": "The cluster uses a self-signed certificate. Disable \"Verify TLS certificate\" in the form ONLY in a controlled test environment; install a valid certificate in production.",
+        "prob.s4": "The agent lists indices but “has no permission” searching one",
+        "prob.c4": "Missing the read or view_index_metadata privilege on that specific index in the role. Redo step 1 of section 3 adjusting the \"names\" pattern.",
+        "prob.s5": "Connector shows “Not configured” after saving",
+        "prob.c5": "A required field was left empty. Open it again and fill in host, port, user and password.",
+        "section.faq_seguridad": "FAQ and security notes",
+        "faq.q1": "Can the agent index, modify or delete documents?",
+        "faq.a1": "No. The connector never calls index, update, delete or bulk, and the ruvic_reader user only has read privileges (read, view_index_metadata, monitor). Two independent safeguards.",
+        "faq.q2": "Where is the password stored?",
+        "faq.a2": "As a secret in the platform's credential store, tied to your user. The UI never displays it again; it only shows “set”. To change it, type a new one in the form; to keep it while editing other fields, leave the field empty.",
+        "faq.q3": "Credential rotation",
+        "faq.a3": "Recommended every 90 days or per your policy: change the password with POST /_security/user/ruvic_reader/_password, update it in the connector form and click Test connection.",
+        "faq.q4": "What if the password is compromised?",
+        "faq.a4.li1": "Change the password immediately or disable the user (PUT /_security/user/ruvic_reader/_disable).",
+        "faq.a4.li2": "Review the cluster's security audit logs.",
+        "faq.a4.li3": "Update the new password in the connector form.",
+        "faq.q5": "Do the credentials expire?",
+        "faq.a5": "By default no (Elasticsearch user/password does not expire on its own). If your policy requires expiration, manage it manually by rotating the password per your security schedule.",
+        "faq.bp.title": "Best practices",
+        "faq.bp.body": "Always use a dedicated read-only user; restrict the role to the indices the agent actually needs instead of \"*\"; keep TLS certificate verification enabled in production; and never share the password over insecure channels.",
+      },
+    };
+    /* El portal aplica el idioma del usuario (localStorage ruvic-docs-lang)
+       y actualiza [data-i18n], [data-i18n-placeholder] y [data-i18n-alt]. */
+  </script>
+</body>
+</html>
