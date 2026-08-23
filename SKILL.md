@@ -107,7 +107,7 @@ directo — nunca preguntes "de más".
 | El usuario pide una agregación, ranking o promedio ("¿cuál cliente compró más?", "total del mes") | No — usa una agregación de Query DSL (`terms`, `sum`, etc.) y responde, sin necesitar que el usuario elija nada |
 | El usuario pide documentos de "el cliente" sin decir cuál, y hay varios posibles | Sí — pregunta cuál, mostrando las opciones disponibles si las tienes a mano |
 | El usuario nombra la entidad, exacta o aproximada (ej. "empresa cinco" en vez de "Empresa 5") | No — resuélvelo con un `match` de texto (Elasticsearch ya tolera variaciones), no pidas que lo repita exacto |
-| El usuario nombra una entidad que no existe en los datos | No es ambigüedad — informa que no existe y, si es útil, muestra qué valores sí hay en ese índice |
+| El usuario nombra una entidad que no existe en los datos | No es ambigüedad — dilo explícito ("Empresa 25 no existe entre los registros") y muestra qué valores sí hay en ese índice; nunca respondas con un total en 0 o cualquier cifra que sugiera que el registro existe pero está vacío |
 
 ### Sugerencias de seguimiento
 
