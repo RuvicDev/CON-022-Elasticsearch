@@ -39,8 +39,16 @@ from .logging_utils import get_logger
 _MAX_SEARCH_SIZE = 1_000
 _SCRIPT_KEYS = {"script", "script_score", "script_fields"}
 
+# Límite de profundidad para el recorrido recursivo de la query. Una
+# query legítima nunca se anida más de unos pocos niveles; sin este
+# límite, una query construida con miles de bool/should anidados agota
+# la pila de Python (RecursionError sin manejar) antes de validar nada.
+_MAX_QUERY_DEPTH = 50
+
 
 def _validate_index(index: str) -> str:
+    if index is not None and not isinstance(index, str):
+        raise ElasticsearchDataError(f"index debe ser un string, no {type(index).__name__}.")
     index = (index or "").strip()
     if not index:
         raise ElasticsearchDataError("index no puede estar vacío.")
@@ -56,12 +64,19 @@ def _validate_query(query: dict[str, Any] | None) -> dict[str, Any]:
     return query
 
 
-def _reject_scripts(value: Any) -> None:
+def _reject_scripts(value: Any, depth: int = 0) -> None:
     """Recorre la query recursivamente y rechaza cualquier cláusula que
     ejecute Painless (script, script_score, script_fields), sin importar
     en qué nivel de anidamiento aparezca. Painless corre en sandbox (sin
     acceso a red/filesystem), pero sigue permitiendo cómputo arbitrario
-    dentro de una consulta que se presenta como solo lectura."""
+    dentro de una consulta que se presenta como solo lectura. Corta con
+    un rechazo limpio si la query está anidada más de _MAX_QUERY_DEPTH
+    niveles, en vez de dejar que la recursión agote la pila."""
+    if depth > _MAX_QUERY_DEPTH:
+        raise ElasticsearchDataError(
+            f"La query está anidada más de {_MAX_QUERY_DEPTH} niveles; "
+            "revisa que no tenga una estructura corrupta o maliciosa."
+        )
     if isinstance(value, dict):
         for key, nested in value.items():
             if key in _SCRIPT_KEYS:
@@ -69,10 +84,10 @@ def _reject_scripts(value: Any) -> None:
                     f"La cláusula {key!r} ejecuta un script Painless y está "
                     "prohibida en este conector de solo lectura."
                 )
-            _reject_scripts(nested)
+            _reject_scripts(nested, depth + 1)
     elif isinstance(value, list):
         for item in value:
-            _reject_scripts(item)
+            _reject_scripts(item, depth + 1)
 
 
 def _wrap_api_error(exc: ApiError, not_found_message: str) -> ElasticsearchConnectorError:
