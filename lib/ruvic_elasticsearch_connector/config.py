@@ -34,7 +34,7 @@ class ElasticsearchConfig:
     connect_timeout: int = 10
 
     @classmethod
-    def from_env(cls) -> "ElasticsearchConfig":
+    def from_env(cls) -> ElasticsearchConfig:
         """Construye la configuración desde las variables RUVIC_ELASTICSEARCH_*.
 
         Raises:

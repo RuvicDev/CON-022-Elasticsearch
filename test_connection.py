@@ -24,9 +24,11 @@ def test_connection() -> tuple[bool, str]:
     except ImportError:
         return (
             False,
-            "La librería ruvic-elasticsearch-connector no está instalada. "
-            "Instala con: pip install git+https://github.com/Dgirto/"
-            "Elasticsearch.git#subdirectory=lib",
+            (
+                "La librería ruvic-elasticsearch-connector no está instalada. "
+                "Instala con: pip install git+https://github.com/Dgirto/"
+                "Elasticsearch.git#subdirectory=lib"
+            ),
         )
 
     try:
@@ -42,7 +44,7 @@ def test_connection() -> tuple[bool, str]:
         return False, f"Error de red: {exc}"
     except ElasticsearchDataError as exc:
         return False, f"Error de datos: {exc}"
-    except Exception as exc:  # red de seguridad: jamás propagar
+    except Exception as exc:  # noqa: BLE001 - red de seguridad: jamás propagar
         return False, f"Error inesperado: {exc}"
 
     return (

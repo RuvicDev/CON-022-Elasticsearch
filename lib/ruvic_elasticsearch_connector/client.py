@@ -20,9 +20,11 @@ from elasticsearch.exceptions import (
     AuthenticationException,
     AuthorizationException,
     BadRequestError,
-    ConnectionError as ESConnectionError,
     ConnectionTimeout,
     NotFoundError,
+)
+from elasticsearch.exceptions import (
+    ConnectionError as ESConnectionError,
 )
 
 from .config import ElasticsearchConfig
@@ -35,6 +37,7 @@ from .exceptions import (
 from .logging_utils import get_logger
 
 _MAX_SEARCH_SIZE = 1_000
+_SCRIPT_KEYS = {"script", "script_score", "script_fields"}
 
 
 def _validate_index(index: str) -> str:
@@ -49,7 +52,27 @@ def _validate_query(query: dict[str, Any] | None) -> dict[str, Any]:
         return {"match_all": {}}
     if not isinstance(query, dict):
         raise ElasticsearchDataError("query debe ser un dict (Query DSL) o None.")
+    _reject_scripts(query)
     return query
+
+
+def _reject_scripts(value: Any) -> None:
+    """Recorre la query recursivamente y rechaza cualquier cláusula que
+    ejecute Painless (script, script_score, script_fields), sin importar
+    en qué nivel de anidamiento aparezca. Painless corre en sandbox (sin
+    acceso a red/filesystem), pero sigue permitiendo cómputo arbitrario
+    dentro de una consulta que se presenta como solo lectura."""
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if key in _SCRIPT_KEYS:
+                raise ElasticsearchDataError(
+                    f"La cláusula {key!r} ejecuta un script Painless y está "
+                    "prohibida en este conector de solo lectura."
+                )
+            _reject_scripts(nested)
+    elif isinstance(value, list):
+        for item in value:
+            _reject_scripts(item)
 
 
 def _wrap_api_error(exc: ApiError, not_found_message: str) -> ElasticsearchConnectorError:
@@ -99,6 +122,12 @@ class ElasticsearchClient:
             basic_auth=(self.config.username, self.config.password),
             verify_certs=self.config.verify_certs,
             request_timeout=self.config.connect_timeout,
+            # El cliente reintenta 3 veces por defecto en errores de
+            # conexión, multiplicando el tiempo real de espera muy por
+            # encima de connect_timeout. Un solo intento respeta el
+            # timeout configurado tal como se documenta.
+            max_retries=0,
+            retry_on_timeout=False,
         )
         return self._client
 
@@ -203,7 +232,12 @@ class ElasticsearchClient:
         """
         index = _validate_index(index)
         query = _validate_query(query)
-        size = max(1, min(int(size), _MAX_SEARCH_SIZE))
+        try:
+            size = max(1, min(int(size), _MAX_SEARCH_SIZE))
+        except (TypeError, ValueError) as exc:
+            raise ElasticsearchDataError(
+                f"size inválido: {size!r}. Debe ser un número entero."
+            ) from exc
         client = self._get_client()
         try:
             response = client.search(index=index, query=query, size=size)
